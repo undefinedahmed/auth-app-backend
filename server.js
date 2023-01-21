@@ -3,17 +3,18 @@ const cors = require("cors");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
+const axios = require("axios");
+
 const User = require("./Models/User");
-const { mongoKey, devPort, jwtSecret } = require("./config");
+const { mongoKey, devPort, jwtSecret, jwtRefresh } = require("./config");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const port = process.env.PORT || devPort;
+const port = devPort;
 
-// auth-app-demha
-// bbtUuPweMUnY6HmU
+// FOR RANDOM STRING: node -> require("crypto").randomBytes(64).toString('hex')
 
 mongoose.connect(mongoKey).then((res) => {
   console.log("Connected!");
@@ -59,6 +60,8 @@ app.post("/sign-up", async (req, res) => {
       role,
     });
 
+    // todo: generate two tokens, 1) access token 2) refresh token
+    // todo: use generateAccessToken function here
     const token = jwt.sign(
       { id: user._id, email: user.email, role: user.role },
       jwtSecret,
@@ -67,13 +70,54 @@ app.post("/sign-up", async (req, res) => {
       }
     );
 
-    res.status(201).send({ userData: user, token });
+    res.status(201).send({ userData: user, token: `bearer ${token}` });
   } catch (error) {
     console.log("Error from sign-up api", error);
     res.status(500).json({ message: "Something went wrong" });
   }
 });
 
+// todo: use generateAccessToken function here
+app.post("/access-token", (req, res) => {});
+
+// if user has a valid access token, then only show him the list of users
+app.get("/get-fake-users", authenticateToken, async (req, res) => {
+  try {
+    await axios
+      .get("https://jsonplaceholder.typicode.com/users")
+      .then((resp) => res.status(200).send(resp.data))
+      .catch((error) =>
+        res.status(500).json({ message: "OOPS! Error in req", error })
+      );
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: "Something went wrong!" });
+  }
+});
+
 app.listen(port, () => {
   console.log(`Auth App listening at http://localhost:${port}`);
 });
+
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+  if (!token) return res.status(401).json({ message: "header not found" });
+
+  jwt.verify(token, jwtSecret, (error, user) => {
+    if (error)
+      return res.status(403).json({ message: "Access Denied!", error });
+
+    next();
+  });
+}
+
+function generateAccessToken(user) {
+  return jwt.sign(
+    { id: user._id, email: user.email, role: user.role },
+    jwtSecret,
+    {
+      expiresIn: "1h",
+    }
+  );
+}
