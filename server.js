@@ -22,14 +22,21 @@ mongoose.connect(mongoKey).then((res) => {
 
 app.post("/login", async (req, res) => {
   try {
-    console.log(req.body);
-    if (await bcrypt.compare(req.body.password, "hashed password from DB")) {
-      console.log("Matches");
-      res.send("Login Successful");
-    } else {
-      res.send("Login Failed");
+    const user = await User.findOne({ email: req.body.email });
+    if (!user) {
+      return res.status(404).send({ message: "Woops! User Not found." });
     }
-    res.send(true);
+    if (await bcrypt.compare(req.body.password, user.password)) {
+      const accessToken = generateAccessToken(user);
+      const refreshToken = generateRefreshToken(user);
+      return res.status(200).send({
+        message: "Login Successful",
+        userData: user,
+        accessToken: `bearer ${accessToken}`,
+        refreshToken: `bearer ${refreshToken}`,
+      });
+    }
+    res.status(401).send({ message: "Woops! Wrong Email Or Password!" });
   } catch (error) {
     console.log("Error from login api", error);
     res.status(500).send(false);
@@ -62,15 +69,14 @@ app.post("/sign-up", async (req, res) => {
 
     // todo: generate two tokens, 1) access token 2) refresh token
     // todo: use generateAccessToken function here
-    const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role },
-      jwtSecret,
-      {
-        expiresIn: "2h",
-      }
-    );
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
 
-    res.status(201).send({ userData: user, token: `bearer ${token}` });
+    res.status(201).send({
+      userData: user,
+      accessToken: `bearer ${accessToken}`,
+      refreshToken: `bearer ${refreshToken}`,
+    });
   } catch (error) {
     console.log("Error from sign-up api", error);
     res.status(500).json({ message: "Something went wrong" });
@@ -78,7 +84,23 @@ app.post("/sign-up", async (req, res) => {
 });
 
 // todo: use generateAccessToken function here
-app.post("/access-token", (req, res) => {});
+app.post("/access-token", async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.body.email });
+    if (!user) {
+      return res.status(404).send({ message: "Woops! User Not found." });
+    }
+    if (await bcrypt.compare(req.body.password, user.password)) {
+      const accessToken = generateAccessToken(user);
+      return res.status(200).send({
+        accessToken: `bearer ${accessToken}`,
+      });
+    }
+    res.status(401).send({ message: "Woops! Wrong Email Or Password!" });
+  } catch (e) {
+    console.log("error from access token api", e);
+  }
+});
 
 // if user has a valid access token, then only show him the list of users
 app.get("/get-fake-users", authenticateToken, async (req, res) => {
@@ -119,5 +141,12 @@ function generateAccessToken(user) {
     {
       expiresIn: "1h",
     }
+  );
+}
+
+function generateRefreshToken(user) {
+  return jwt.sign(
+    { id: user._id, email: user.email, role: user.role },
+    jwtSecret
   );
 }
