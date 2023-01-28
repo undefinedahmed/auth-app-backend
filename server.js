@@ -67,8 +67,6 @@ app.post("/sign-up", async (req, res) => {
       role,
     });
 
-    // todo: generate two tokens, 1) access token 2) refresh token
-    // todo: use generateAccessToken function here
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
@@ -83,22 +81,25 @@ app.post("/sign-up", async (req, res) => {
   }
 });
 
-// todo: use generateAccessToken function here
 app.post("/access-token", async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.body.email });
-    if (!user) {
-      return res.status(404).send({ message: "Woops! User Not found." });
-    }
-    if (await bcrypt.compare(req.body.password, user.password)) {
+    const { token } = req.body;
+    jwt.verify(token.split(" ")[1], jwtSecret, async (err, userDetails) => {
+      if (err) {
+        return res.status(403).json({ message: "Access Denied!", err });
+      }
+      const user = await User.findOne({ email: userDetails.email });
+      if (!user) {
+        return res.status(404).send({ message: "Woops! User Not found." });
+      }
       const accessToken = generateAccessToken(user);
       return res.status(200).send({
         accessToken: `bearer ${accessToken}`,
       });
-    }
-    res.status(401).send({ message: "Woops! Wrong Email Or Password!" });
+    });
   } catch (e) {
     console.log("error from access token api", e);
+    res.status(500).json({ message: "Something went wrong!" });
   }
 });
 
@@ -117,19 +118,22 @@ app.get("/get-fake-users", authenticateToken, async (req, res) => {
   }
 });
 
+// todo: use promise to get selected users from array
+// select authors from frontend and get books in a single call using promise
+
 app.listen(port, () => {
   console.log(`Auth App listening at http://localhost:${port}`);
 });
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
+  // splitting the header because of bearer keyword
   const token = authHeader && authHeader.split(" ")[1];
   if (!token) return res.status(401).json({ message: "header not found" });
 
   jwt.verify(token, jwtSecret, (error, user) => {
     if (error)
       return res.status(403).json({ message: "Access Denied!", error });
-
     next();
   });
 }
