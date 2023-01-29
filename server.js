@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const axios = require("axios");
+const { check, validationResult } = require("express-validator");
 
 const User = require("./Models/User");
 const { mongoKey, devPort, jwtSecret, jwtRefresh } = require("./config");
@@ -20,66 +21,97 @@ mongoose.connect(mongoKey).then((res) => {
   console.log("Connected!");
 });
 
-app.post("/login", async (req, res) => {
-  try {
-    const user = await User.findOne({ email: req.body.email });
-    if (!user) {
-      return res.status(404).send({ message: "Woops! User Not found." });
+app.post(
+  "/login",
+  [check("email", "Invalid Email!").isEmail()],
+  async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!(email && password)) {
+        return res.status(400).send("All inputs are required!");
+      }
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          errors: errors.array(),
+        });
+      }
+
+      const user = await User.findOne({ email: req.body.email });
+      if (!user) {
+        return res.status(404).send({ message: "Woops! User Not found." });
+      }
+      if (await bcrypt.compare(req.body.password, user.password)) {
+        const accessToken = generateAccessToken(user);
+        const refreshToken = generateRefreshToken(user);
+        return res.status(200).send({
+          message: "Login Successful",
+          userData: user,
+          accessToken: `bearer ${accessToken}`,
+          refreshToken: `bearer ${refreshToken}`,
+        });
+      }
+      res.status(401).send({ message: "Woops! Wrong Email Or Password!" });
+    } catch (error) {
+      console.log("Error from login api", error);
+      res.status(500).send(false);
     }
-    if (await bcrypt.compare(req.body.password, user.password)) {
+  }
+);
+
+app.post(
+  "/sign-up",
+  [
+    check("email", "Please Provide A Valid Email!").isEmail(),
+    check("password", "Please Provide A Valid Password!").isLength({
+      min: 6,
+    }),
+  ],
+  async (req, res) => {
+    try {
+      const { email, password, name, phone, role } = req.body;
+      if (!(email && password && name && phone && role)) {
+        return res.status(400).send("All inputs are required!");
+      }
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          errors: errors.array(),
+        });
+      }
+
+      const userExists = await User.findOne({ email: email });
+      if (userExists) {
+        return res.status(409).send({
+          message: "Woops! This email already exists. Try out with a new one.",
+        });
+      }
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const user = await User.create({
+        name,
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        phone,
+        role,
+      });
+
       const accessToken = generateAccessToken(user);
       const refreshToken = generateRefreshToken(user);
-      return res.status(200).send({
-        message: "Login Successful",
+
+      res.status(201).send({
         userData: user,
         accessToken: `bearer ${accessToken}`,
         refreshToken: `bearer ${refreshToken}`,
       });
+    } catch (error) {
+      console.log("Error from sign-up api", error);
+      res.status(500).json({ message: "Something went wrong" });
     }
-    res.status(401).send({ message: "Woops! Wrong Email Or Password!" });
-  } catch (error) {
-    console.log("Error from login api", error);
-    res.status(500).send(false);
   }
-});
-
-app.post("/sign-up", async (req, res) => {
-  try {
-    const { email, password, name, phone, role } = req.body;
-
-    if (!(email && password && name && phone && role)) {
-      return res.status(400).send("All inputs are required!");
-    }
-
-    const userExists = await User.findOne({ email: email });
-    if (userExists) {
-      return res.status(409).send({
-        message: "Woops! This email already exists. Try out with a new one.",
-      });
-    }
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = await User.create({
-      name,
-      email: email.toLowerCase(),
-      password: hashedPassword,
-      phone,
-      role,
-    });
-
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-
-    res.status(201).send({
-      userData: user,
-      accessToken: `bearer ${accessToken}`,
-      refreshToken: `bearer ${refreshToken}`,
-    });
-  } catch (error) {
-    console.log("Error from sign-up api", error);
-    res.status(500).json({ message: "Something went wrong" });
-  }
-});
+);
 
 app.post("/access-token", async (req, res) => {
   try {
@@ -104,6 +136,7 @@ app.post("/access-token", async (req, res) => {
 });
 
 // if user has a valid access token, then only show him the list of users
+// TODO: check if user is admin then send users else send todos
 app.get("/get-fake-users", authenticateToken, async (req, res) => {
   try {
     await axios
