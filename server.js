@@ -7,11 +7,13 @@ const axios = require("axios");
 const { check, validationResult } = require("express-validator");
 
 const User = require("./Models/User");
+const auth = require("./Routes/auth");
 const { mongoKey, devPort, jwtSecret, jwtRefresh } = require("./config");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use("/auth", auth);
 
 const port = devPort;
 
@@ -38,7 +40,7 @@ app.post(
         });
       }
 
-      const user = await User.findOne({ email: req.body.email });
+      const user = await User.findOne({ email });
       if (!user) {
         return res.status(404).send({ message: "Woops! User Not found." });
       }
@@ -60,6 +62,7 @@ app.post(
   }
 );
 
+// TODO: add a identification flag while signing up
 app.post(
   "/sign-up",
   [
@@ -82,7 +85,7 @@ app.post(
         });
       }
 
-      const userExists = await User.findOne({ email: email });
+      const userExists = await User.findOne({ email });
       if (userExists) {
         return res.status(409).send({
           message: "Woops! This email already exists. Try out with a new one.",
@@ -135,12 +138,18 @@ app.post("/access-token", async (req, res) => {
   }
 });
 
-// if user has a valid access token, then only show him the list of users
-// TODO: check if user is admin then send users else send todos
+/**
+ * @purpose checks role in the access token
+ * @return list of todos if role is user else returns list of users if role is admin
+ */
 app.get("/get-fake-users", authenticateToken, async (req, res) => {
   try {
     await axios
-      .get("https://jsonplaceholder.typicode.com/users")
+      .get(
+        `https://jsonplaceholder.typicode.com/${
+          req.user.role === "admin" ? "users" : "todos"
+        }`
+      )
       .then((resp) => res.status(200).send(resp.data))
       .catch((error) =>
         res.status(500).json({ message: "OOPS! Error in req", error })
@@ -150,9 +159,6 @@ app.get("/get-fake-users", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Something went wrong!" });
   }
 });
-
-// todo: use promise to get selected users from array
-// select authors from frontend and get books in a single call using promise
 
 app.listen(port, () => {
   console.log(`Auth App listening at http://localhost:${port}`);
@@ -167,6 +173,9 @@ function authenticateToken(req, res, next) {
   jwt.verify(token, jwtSecret, (error, user) => {
     if (error)
       return res.status(403).json({ message: "Access Denied!", error });
+
+    // sending user object in request
+    req.user = user;
     next();
   });
 }
@@ -184,6 +193,6 @@ function generateAccessToken(user) {
 function generateRefreshToken(user) {
   return jwt.sign(
     { id: user._id, email: user.email, role: user.role },
-    jwtSecret
+    jwtRefresh
   );
 }
