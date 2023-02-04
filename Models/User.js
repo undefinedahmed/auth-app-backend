@@ -8,6 +8,7 @@ const UserSchema = new Schema(
     password: { type: String },
     phone: { type: Number },
     role: { type: String },
+    identity: { type: String },
   },
   { versionKey: false, timestamps: false }
 );
