@@ -10,7 +10,7 @@ const UserSchema = new Schema(
     role: { type: String },
     identity: { type: String },
   },
-  { versionKey: false, timestamps: false }
+  { versionKey: false, timestamps: true }
 );
 
 module.exports = mongoose.model("User", UserSchema);

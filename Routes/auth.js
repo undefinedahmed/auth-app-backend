@@ -2,12 +2,15 @@ const router = require("express").Router();
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const { check, validationResult } = require("express-validator");
+const otpGenerator = require("otp-generator");
+
 const User = require("../Models/User");
 const { jwtRefresh } = require("../config");
 const {
   generateAccessToken,
   generateRefreshToken,
 } = require("../Utils/Helpers");
+const middleware = require("../Utils/Middleware");
 
 router.post(
   "/login",
@@ -99,34 +102,87 @@ router.post(
 );
 
 // verifies the refresh token, checks if email exists in db and generates an access token
-router.post("/generate-access-token", async (req, res) => {
-  try {
-    const { token } = req.body;
-    if (!token) return res.status(400).send({ message: "Token not found!" });
+router.post(
+  "/generate-access-token",
+  middleware.authenticateRefreshToken,
+  async (req, res) => {
+    try {
+      const { user } = req;
 
-    jwt.verify(token.split(" ")[1], jwtRefresh, async (err, userDetails) => {
-      if (err) {
-        return res.status(403).json({ message: "Access Denied!", err });
-      }
-      const user = await User.findOne({ email: userDetails.email });
-      if (!user) {
+      const userData = await User.findOne({ email: user.email });
+      if (!userData) {
         return res.status(404).send({ message: "Woops! User Not found." });
       }
-      const accessToken = generateAccessToken(user);
+      const accessToken = generateAccessToken(userData);
       return res.status(200).send({
         accessToken: `bearer ${accessToken}`,
       });
-    });
-  } catch (e) {
-    console.log("error from access token api", e);
-    res.status(500).json({ message: "Something went wrong!" });
+    } catch (e) {
+      console.log("error from access token api", e);
+      res.status(500).json({ message: "Something went wrong!" });
+    }
   }
-});
+);
 
 // todo: check the identifier flag when changing password
-router.post("/reset-password", (req, res) => {
-  res.send({ msg: "han bhae kia haal hain?" });
-});
+router.post(
+  "/reset-password",
+  [check("email", "Invalid Email!").isEmail()],
+  middleware.authenticateRefreshToken,
+  async (req, res) => {
+    try {
+      const { password, identity, email, updatedPassword } = req.body;
+
+      if (!(password && identity && email && updatedPassword))
+        return res.status(400).json({ message: "All fields are required!" });
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          errors: errors.array(),
+        });
+      }
+
+      const user = await User.findOne({ email });
+      if (!user) {
+        return res.status(404).send({ message: "Woops! User Not found." });
+      }
+
+      if (
+        (await bcrypt.compare(password, user.password)) &&
+        (await bcrypt.compare(identity, user.identity))
+      ) {
+        const hashedPassword = await bcrypt.hash(updatedPassword, 10);
+
+        const filter = { email: user.email };
+        const updatedDoc = {
+          password: hashedPassword,
+        };
+
+        const result = await User.updateOne(filter, updatedDoc);
+
+        if (result.modifiedCount) {
+          return res.status(200).send({
+            message: "Password Updated Successfully!",
+          });
+        }
+      } else {
+        return res.status(401).send({
+          message:
+            "Couldn't update password! Identity or Old Password does not matches.",
+        });
+      }
+      return res.status(401).send({
+        message: "Something went wrong. Couldn't update password!",
+      });
+    } catch (e) {
+      console.log("Error from change password: ", e);
+      res.status(500).send({
+        message: "Something went wrong. Couldn't update the password",
+      });
+    }
+  }
+);
 
 // todo: check the identifier flag
 router.post(
@@ -150,7 +206,15 @@ router.post(
       if (!user) {
         return res.status(404).send({ message: "Woops! User Not found." });
       }
+
+      const otp = await otpGenerator.generate(6, {
+        lowerCaseAlphabets: false,
+        upperCaseAlphabets: false,
+        specialChars: false,
+      });
+
       // TODO: send an otp to user with a few minutes of validation
+      // TODO: save otp in db with email, if same email otp is generated, delete prev one and save new one
     } catch (e) {
       console.error("Error inside forgot password: ", e);
     }
