@@ -5,12 +5,13 @@ const { check, validationResult } = require("express-validator");
 const otpGenerator = require("otp-generator");
 
 const User = require("../Models/User");
-const { jwtRefresh } = require("../config");
+const OTP = require("../Models/OTP");
 const {
   generateAccessToken,
   generateRefreshToken,
 } = require("../Utils/Helpers");
 const middleware = require("../Utils/Middleware");
+const sendMail = require("../Utils/Email");
 
 router.post(
   "/login",
@@ -124,7 +125,6 @@ router.post(
   }
 );
 
-// todo: check the identifier flag when changing password
 router.post(
   "/reset-password",
   [check("email", "Invalid Email!").isEmail()],
@@ -184,7 +184,6 @@ router.post(
   }
 );
 
-// todo: check the identifier flag
 router.post(
   "/forgot-password",
   [check("email", "Invalid Email!").isEmail()],
@@ -206,19 +205,44 @@ router.post(
       if (!user) {
         return res.status(404).send({ message: "Woops! User Not found." });
       }
+      // todo: check if otp already exits of that email and is not expired yet, then create a new one and delete old else throw error of please check your email
 
       const otp = await otpGenerator.generate(6, {
         lowerCaseAlphabets: false,
         upperCaseAlphabets: false,
         specialChars: false,
       });
+      const expires = new Date().getTime() + 30 * 60000;
 
-      // TODO: send an otp to user with a few minutes of validation
-      // TODO: save otp in db with email, if same email otp is generated, delete prev one and save new one
+      await OTP.create({
+        email,
+        code: otp,
+        expiresAt: expires,
+      })
+        .then(async () => {
+          await sendMail(
+            user.name,
+            email,
+            `Your OTP six digit is ${otp}. Please paste it within 30 minutes from now.`,
+            "OTP Verification"
+          );
+          // todo: why this doesn't wait here
+          return res
+            .status(200)
+            .send({ message: `OTP sent to your email: ${email}` });
+        })
+        .catch((e) => {
+          console.log("Error while saving OTP", e);
+          return res
+            .status(500)
+            .send({ message: "Something went wrong. Couldn't generate OTP" });
+        });
     } catch (e) {
       console.error("Error inside forgot password: ", e);
     }
   }
 );
+
+router.post("/verify-otp", async (req, res) => {});
 
 module.exports = router;

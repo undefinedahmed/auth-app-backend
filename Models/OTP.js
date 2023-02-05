@@ -5,8 +5,9 @@ const OTPSchema = new Schema(
   {
     email: { type: String, unique: true },
     code: { type: Number },
+    expiresAt: { type: Number },
   },
-  { versionKey: false, timestamps: true }
+  { versionKey: false, timestamps: false }
 );
 
 module.exports = mongoose.model("OTP", OTPSchema);

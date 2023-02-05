@@ -6,4 +6,6 @@ module.exports = {
   mongoKey: process.env.MONGO_URI,
   jwtSecret: process.env.JWT_SECRET,
   jwtRefresh: process.env.JWT_SECRET_REFRESH,
+  email: process.env.EMAIL,
+  password: process.env.PASSWORD,
 };
