@@ -12,7 +12,7 @@ app.use(express.json());
 app.use("/auth", auth);
 app.use("/fake", fakeData);
 
-const port = devPort;
+const port = process.env.PORT || devPort;
 
 // FOR RANDOM STRING: node -> require("crypto").randomBytes(64).toString('hex')
 

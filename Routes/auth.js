@@ -213,7 +213,6 @@ router.post(
         specialChars: false,
       });
       const expires = new Date().getTime() + 30 * 60000;
-
       await OTP.create({
         email,
         code: otp,
@@ -226,19 +225,21 @@ router.post(
             `Your OTP six digit is ${otp}. Please paste it within 30 minutes from now.`,
             "OTP Verification"
           );
-          // todo: why this doesn't wait here
-          return res
-            .status(200)
-            .send({ message: `OTP sent to your email: ${email}` });
+          return res.status(200).send({
+            message: `OTP sent to your email: ${email}. Check your Inbox or Spam folder`,
+          });
         })
         .catch((e) => {
-          console.log("Error while saving OTP", e);
+          console.error("Error while saving OTP", e);
           return res
             .status(500)
             .send({ message: "Something went wrong. Couldn't generate OTP" });
         });
     } catch (e) {
       console.error("Error inside forgot password: ", e);
+      return res
+        .status(500)
+        .send({ message: "Something went wrong. Couldn't generate OTP!" });
     }
   }
 );

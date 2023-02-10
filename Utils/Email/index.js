@@ -43,7 +43,7 @@ const sendMail = async (name, userEmail, text, subject) => {
   };
 
   // send mail
-  transporter
+  await transporter
     .sendMail(message)
     .then(() => {
       console.log("Email sent");
@@ -51,7 +51,7 @@ const sendMail = async (name, userEmail, text, subject) => {
     })
     .catch((error) => {
       console.log("Error sending email", error);
-      return false;
+      throw error;
     });
 };
 
