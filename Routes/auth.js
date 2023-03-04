@@ -131,7 +131,16 @@ router.post(
   middleware.authenticateRefreshToken,
   async (req, res) => {
     try {
-      const { password, identity, email, updatedPassword } = req.body;
+      const { usingOtp, email, updatedPassword } = req.body;
+
+      // todo: update password in case of otp
+      // there will be no prev pass and identity in case of using otp
+      if (usingOtp) {
+        return res.status(200).json({ message: "Some msg!" });
+      }
+      // ! end
+
+      const { password, identity } = req.body;
 
       if (!(password && identity && email && updatedPassword))
         return res.status(400).json({ message: "All fields are required!" });
@@ -205,7 +214,20 @@ router.post(
       if (!user) {
         return res.status(404).send({ message: "Woops! User Not found." });
       }
-      // todo: check if otp already exits of that email and is not expired yet, then create a new one and delete old else throw error of please check your email
+
+      const isOtpExists = await OTP.findOne({ email });
+      if (isOtpExists) {
+        const timeNow = new Date().getTime();
+        if (isOtpExists.expiresAt > timeNow) {
+          return res.status(400).send({
+            message:
+              "OTP already sent to your email. Please check your inbox or spam folder.",
+          });
+        }
+        await OTP.deleteOne({ email })
+          .then(() => console.log("Deleted otp"))
+          .catch((e) => console.log(e));
+      }
 
       const otp = await otpGenerator.generate(6, {
         lowerCaseAlphabets: false,
@@ -244,6 +266,22 @@ router.post(
   }
 );
 
-router.post("/verify-otp", async (req, res) => {});
+router.post("/verify-otp", async (req, res) => {
+  const { otp } = req.body;
+  if (!otp) {
+    return res.status(400).send({ message: "OTP is required" });
+  }
+
+  const otpData = await OTP.findOne({ code: otp });
+  if (!otpData) {
+    return res.status(404).send({ message: "OTP Not found." });
+  }
+  const timeNow = new Date().getTime();
+  if (otpData.expiresAt < timeNow) {
+    return res.status(401).send({ message: "OTP Expired!" });
+  }
+  await OTP.deleteOne({ code: otp });
+  return res.status(200).send({ message: "OTP Verified!" });
+});
 
 module.exports = router;
