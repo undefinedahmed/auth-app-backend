@@ -3,14 +3,14 @@ const cors = require("cors");
 const mongoose = require("mongoose");
 
 const auth = require("./Routes/auth");
-const fakeData = require("./Routes/fakeData");
+const user = require("./Routes/user");
 const { mongoKey, devPort } = require("./config");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use("/auth", auth);
-app.use("/fake", fakeData);
+app.use("/user", user);
 
 const port = process.env.PORT || devPort;
 

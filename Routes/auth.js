@@ -18,8 +18,8 @@ router.post(
   [check("email", "Invalid Email!").isEmail()],
   async (req, res) => {
     try {
-      const { email, password } = req.body;
-      if (!(email && password)) {
+      const { email, password, identifier } = req.body;
+      if (!(email && password && identifier)) {
         return res.status(400).send({ message: "All inputs are required!" });
       }
 
@@ -34,20 +34,22 @@ router.post(
       if (!user) {
         return res.status(404).send({ message: "Woops! User Not found." });
       }
-      if (await bcrypt.compare(req.body.password, user.password)) {
+      if (
+        (await bcrypt.compare(req.body.password, user.password)) &&
+        (await bcrypt.compare(req.body.identifier, user.identifier))
+      ) {
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
         return res.status(200).send({
           message: "Login Successful",
-          userData: user,
           accessToken: `bearer ${accessToken}`,
           refreshToken: `bearer ${refreshToken}`,
         });
       }
-      res.status(401).send({ message: "Woops! Wrong Email Or Password!" });
+      return res.status(401).send({ message: "Woops! Wrong Credentials" });
     } catch (error) {
       console.log("Error from login api", error);
-      res.status(500).send(false);
+      return res.status(500).send(false);
     }
   }
 );
@@ -62,8 +64,8 @@ router.post(
   ],
   async (req, res) => {
     try {
-      const { email, password, name, phone, role, identity } = req.body;
-      if (!(email && password && name && phone && role && identity)) {
+      const { email, password, name, phone, role, identifier } = req.body;
+      if (!(email && password && name && phone && role && identifier)) {
         return res.status(400).send("All inputs are required!");
       }
 
@@ -81,7 +83,7 @@ router.post(
         });
       }
       const hashedPassword = await bcrypt.hash(password, 10);
-      const hashedIdentity = await bcrypt.hash(identity, 5);
+      const hashedIdentifier = await bcrypt.hash(identifier, 5);
 
       await User.create({
         name,
@@ -89,15 +91,15 @@ router.post(
         password: hashedPassword,
         phone,
         role,
-        identity: hashedIdentity,
+        identifier: hashedIdentifier,
       });
 
-      res.status(201).send({
+      return res.status(201).send({
         message: "You've successfully registered!",
       });
     } catch (error) {
       console.log("Error from sign-up api", error);
-      res.status(500).json({ message: "Something went wrong" });
+      return res.status(500).json({ message: "Something went wrong" });
     }
   }
 );
@@ -120,7 +122,7 @@ router.post(
       });
     } catch (e) {
       console.log("error from access token api", e);
-      res.status(500).json({ message: "Something went wrong!" });
+      return res.status(500).json({ message: "Something went wrong!" });
     }
   }
 );
@@ -134,15 +136,15 @@ router.post(
       const { usingOtp, email, updatedPassword } = req.body;
 
       // todo: update password in case of otp
-      // there will be no prev pass and identity in case of using otp
+      // there will be no prev pass and identifier in case of using otp
       if (usingOtp) {
         return res.status(200).json({ message: "Some msg!" });
       }
       // ! end
 
-      const { password, identity } = req.body;
+      const { password, identifier } = req.body;
 
-      if (!(password && identity && email && updatedPassword))
+      if (!(password && identifier && email && updatedPassword))
         return res.status(400).json({ message: "All fields are required!" });
 
       const errors = validationResult(req);
@@ -159,7 +161,7 @@ router.post(
 
       if (
         (await bcrypt.compare(password, user.password)) &&
-        (await bcrypt.compare(identity, user.identity))
+        (await bcrypt.compare(identifier, user.identifier))
       ) {
         const hashedPassword = await bcrypt.hash(updatedPassword, 10);
 
@@ -178,7 +180,7 @@ router.post(
       } else {
         return res.status(401).send({
           message:
-            "Couldn't update password! Identity or Old Password does not matches.",
+            "Couldn't update password! Identifier or Old Password does not matches.",
         });
       }
       return res.status(401).send({
