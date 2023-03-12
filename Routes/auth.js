@@ -1,5 +1,4 @@
 const router = require("express").Router();
-const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const { check, validationResult } = require("express-validator");
 const otpGenerator = require("otp-generator");
@@ -127,25 +126,22 @@ router.post(
   }
 );
 
+/**
+ * @summary this api resets password in both cases, using otp and when the user is logged in too based on usingOtp flag
+ */
+
 router.post(
   "/reset-password",
   [check("email", "Invalid Email!").isEmail()],
   middleware.authenticateRefreshToken,
   async (req, res) => {
     try {
+      console.log(req.body);
       const { usingOtp, email, updatedPassword } = req.body;
 
-      // todo: update password in case of otp
-      // there will be no prev pass and identifier in case of using otp
-      if (usingOtp) {
-        return res.status(200).json({ message: "Some msg!" });
-      }
-      // ! end
-
-      const { password, identifier } = req.body;
-
-      if (!(password && identifier && email && updatedPassword))
+      if (!(email && updatedPassword)) {
         return res.status(400).json({ message: "All fields are required!" });
+      }
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -153,6 +149,36 @@ router.post(
           errors: errors.array(),
         });
       }
+
+      // update password in case of OTP
+      // there will be no prev pass and identifier in case of using OTP
+      if (usingOtp) {
+        const user = await User.findOne({ email });
+
+        if (!user) {
+          return res.status(404).send({ message: "Woops! User Not found." });
+        }
+        const hashedPassword = await bcrypt.hash(updatedPassword, 10);
+
+        const filter = { email: user.email };
+        const updatedDoc = {
+          password: hashedPassword,
+          newStr: "hello world",
+        };
+
+        const result = await User.updateOne(filter, updatedDoc);
+
+        if (result.modifiedCount) {
+          return res.status(200).send({
+            message: "Password Updated Successfully!",
+          });
+        }
+        return res.status(500).json({ message: "Something went wrong" });
+      }
+
+      const { password, identifier } = req.body;
+      if (!(password && identifier))
+        return res.status(400).json({ message: "All fields are required!" });
 
       const user = await User.findOne({ email });
       if (!user) {
@@ -195,6 +221,11 @@ router.post(
   }
 );
 
+/**
+ * @summary this API sends otp to the user's email
+ * id API is valid and is not expired then it sends a response that token already sent to you email
+ * else deletes the orl token and regenerates a new one
+ */
 router.post(
   "/forgot-password",
   [check("email", "Invalid Email!").isEmail()],
@@ -227,8 +258,8 @@ router.post(
           });
         }
         await OTP.deleteOne({ email })
-          .then(() => console.log("Deleted otp"))
-          .catch((e) => console.log(e));
+          .then(() => console.log("Deleted old OTP"))
+          .catch((e) => console.log("Error deleting OTP: ", e));
       }
 
       const otp = await otpGenerator.generate(6, {
@@ -273,10 +304,9 @@ router.post("/verify-otp", async (req, res) => {
   if (!otp) {
     return res.status(400).send({ message: "OTP is required" });
   }
-
   const otpData = await OTP.findOne({ code: otp });
   if (!otpData) {
-    return res.status(404).send({ message: "OTP Not found." });
+    return res.status(404).send({ message: "Invalid OTP." });
   }
   const timeNow = new Date().getTime();
   if (otpData.expiresAt < timeNow) {
