@@ -1,5 +1,4 @@
 const router = require("express").Router();
-const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const { check, validationResult } = require("express-validator");
 const otpGenerator = require("otp-generator");
@@ -18,8 +17,8 @@ router.post(
   [check("email", "Invalid Email!").isEmail()],
   async (req, res) => {
     try {
-      const { email, password } = req.body;
-      if (!(email && password)) {
+      const { email, password, identifier } = req.body;
+      if (!(email && password && identifier)) {
         return res.status(400).send({ message: "All inputs are required!" });
       }
 
@@ -34,20 +33,22 @@ router.post(
       if (!user) {
         return res.status(404).send({ message: "Woops! User Not found." });
       }
-      if (await bcrypt.compare(req.body.password, user.password)) {
+      if (
+        (await bcrypt.compare(req.body.password, user.password)) &&
+        (await bcrypt.compare(req.body.identifier, user.identifier))
+      ) {
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
         return res.status(200).send({
           message: "Login Successful",
-          userData: user,
           accessToken: `bearer ${accessToken}`,
           refreshToken: `bearer ${refreshToken}`,
         });
       }
-      res.status(401).send({ message: "Woops! Wrong Email Or Password!" });
+      return res.status(401).send({ message: "Woops! Wrong Credentials" });
     } catch (error) {
       console.log("Error from login api", error);
-      res.status(500).send(false);
+      return res.status(500).send(false);
     }
   }
 );
@@ -62,8 +63,8 @@ router.post(
   ],
   async (req, res) => {
     try {
-      const { email, password, name, phone, role, identity } = req.body;
-      if (!(email && password && name && phone && role && identity)) {
+      const { email, password, name, phone, role, identifier } = req.body;
+      if (!(email && password && name && phone && role && identifier)) {
         return res.status(400).send("All inputs are required!");
       }
 
@@ -81,7 +82,7 @@ router.post(
         });
       }
       const hashedPassword = await bcrypt.hash(password, 10);
-      const hashedIdentity = await bcrypt.hash(identity, 5);
+      const hashedIdentifier = await bcrypt.hash(identifier, 5);
 
       await User.create({
         name,
@@ -89,15 +90,15 @@ router.post(
         password: hashedPassword,
         phone,
         role,
-        identity: hashedIdentity,
+        identifier: hashedIdentifier,
       });
 
-      res.status(201).send({
+      return res.status(201).send({
         message: "You've successfully registered!",
       });
     } catch (error) {
       console.log("Error from sign-up api", error);
-      res.status(500).json({ message: "Something went wrong" });
+      return res.status(500).json({ message: "Something went wrong" });
     }
   }
 );
@@ -120,10 +121,14 @@ router.post(
       });
     } catch (e) {
       console.log("error from access token api", e);
-      res.status(500).json({ message: "Something went wrong!" });
+      return res.status(500).json({ message: "Something went wrong!" });
     }
   }
 );
+
+/**
+ * @summary this api resets password in both cases, using otp and when the user is logged in too based on usingOtp flag
+ */
 
 router.post(
   "/reset-password",
@@ -131,19 +136,12 @@ router.post(
   middleware.authenticateRefreshToken,
   async (req, res) => {
     try {
+      console.log(req.body);
       const { usingOtp, email, updatedPassword } = req.body;
 
-      // todo: update password in case of otp
-      // there will be no prev pass and identity in case of using otp
-      if (usingOtp) {
-        return res.status(200).json({ message: "Some msg!" });
-      }
-      // ! end
-
-      const { password, identity } = req.body;
-
-      if (!(password && identity && email && updatedPassword))
+      if (!(email && updatedPassword)) {
         return res.status(400).json({ message: "All fields are required!" });
+      }
 
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -152,6 +150,36 @@ router.post(
         });
       }
 
+      // update password in case of OTP
+      // there will be no prev pass and identifier in case of using OTP
+      if (usingOtp) {
+        const user = await User.findOne({ email });
+
+        if (!user) {
+          return res.status(404).send({ message: "Woops! User Not found." });
+        }
+        const hashedPassword = await bcrypt.hash(updatedPassword, 10);
+
+        const filter = { email: user.email };
+        const updatedDoc = {
+          password: hashedPassword,
+          newStr: "hello world",
+        };
+
+        const result = await User.updateOne(filter, updatedDoc);
+
+        if (result.modifiedCount) {
+          return res.status(200).send({
+            message: "Password Updated Successfully!",
+          });
+        }
+        return res.status(500).json({ message: "Something went wrong" });
+      }
+
+      const { password, identifier } = req.body;
+      if (!(password && identifier))
+        return res.status(400).json({ message: "All fields are required!" });
+
       const user = await User.findOne({ email });
       if (!user) {
         return res.status(404).send({ message: "Woops! User Not found." });
@@ -159,7 +187,7 @@ router.post(
 
       if (
         (await bcrypt.compare(password, user.password)) &&
-        (await bcrypt.compare(identity, user.identity))
+        (await bcrypt.compare(identifier, user.identifier))
       ) {
         const hashedPassword = await bcrypt.hash(updatedPassword, 10);
 
@@ -178,7 +206,7 @@ router.post(
       } else {
         return res.status(401).send({
           message:
-            "Couldn't update password! Identity or Old Password does not matches.",
+            "Couldn't update password! Identifier or Old Password does not matches.",
         });
       }
       return res.status(401).send({
@@ -193,6 +221,11 @@ router.post(
   }
 );
 
+/**
+ * @summary this API sends otp to the user's email
+ * id API is valid and is not expired then it sends a response that token already sent to you email
+ * else deletes the orl token and regenerates a new one
+ */
 router.post(
   "/forgot-password",
   [check("email", "Invalid Email!").isEmail()],
@@ -225,8 +258,8 @@ router.post(
           });
         }
         await OTP.deleteOne({ email })
-          .then(() => console.log("Deleted otp"))
-          .catch((e) => console.log(e));
+          .then(() => console.log("Deleted old OTP"))
+          .catch((e) => console.log("Error deleting OTP: ", e));
       }
 
       const otp = await otpGenerator.generate(6, {
@@ -271,10 +304,9 @@ router.post("/verify-otp", async (req, res) => {
   if (!otp) {
     return res.status(400).send({ message: "OTP is required" });
   }
-
   const otpData = await OTP.findOne({ code: otp });
   if (!otpData) {
-    return res.status(404).send({ message: "OTP Not found." });
+    return res.status(404).send({ message: "Invalid OTP." });
   }
   const timeNow = new Date().getTime();
   if (otpData.expiresAt < timeNow) {
