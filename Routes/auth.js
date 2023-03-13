@@ -63,8 +63,8 @@ router.post(
   ],
   async (req, res) => {
     try {
-      const { email, password, name, phone, role, identifier } = req.body;
-      if (!(email && password && name && phone && role && identifier)) {
+      const { email, password, name, phone, identifier } = req.body;
+      if (!(email && password && name && phone && identifier)) {
         return res.status(400).send("All inputs are required!");
       }
 
@@ -89,7 +89,6 @@ router.post(
         email: email.toLowerCase(),
         password: hashedPassword,
         phone,
-        role,
         identifier: hashedIdentifier,
       });
 
