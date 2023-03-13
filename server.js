@@ -8,7 +8,7 @@ const { mongoKey, devPort } = require("./config");
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ extended: false }));
 app.use("/api/auth", auth);
 app.use("/api/user", user);
 
