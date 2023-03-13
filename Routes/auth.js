@@ -12,6 +12,10 @@ const {
 const middleware = require("../Utils/Middleware");
 const sendMail = require("../Utils/Email");
 
+router.use("/ping-auth", (req, res) => {
+  return res.send({ message: "Working!" });
+});
+
 router.post(
   "/login",
   [check("email", "Invalid Email!").isEmail()],

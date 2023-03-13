@@ -9,8 +9,8 @@ const { mongoKey, devPort } = require("./config");
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use("/auth", auth);
-app.use("/user", user);
+app.use("/api/auth", auth);
+app.use("/api/user", user);
 
 app.use("/ping", (req, res) => {
   return res.send({ message: "Working!" });
